@@ -1,0 +1,8 @@
+{
+  "name": "Copy of SLSU Gu App",
+  "description": "SLSU Gu App is a comprehensive campus service request and reporting platform powered by AI. Users can report issues, track status, and provide feedback, while administrators manage operations via a data-driven dashboard.",
+  "requestFramePermissions": [
+    "camera",
+    "microphone"
+  ]
+}
