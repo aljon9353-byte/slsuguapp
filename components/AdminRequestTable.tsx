@@ -1,6 +1,8 @@
+
+
 import React, { useState, useEffect, useRef } from 'react';
 import { ServiceRequest, RequestStatus, UserRole, Comment } from '../types';
-import { Search, MapPin, Clock, Loader2, CheckCircle, Trash2, AlertTriangle, MessageSquare, Send, User, X, Image as ImageIcon, Plus, Star, Filter, Briefcase, GraduationCap } from 'lucide-react';
+import { Search, MapPin, Clock, Loader2, CheckCircle, Trash2, AlertTriangle, MessageSquare, Send, User, X, Image as ImageIcon, Plus, Star, Filter, Briefcase, GraduationCap, ChevronRight, ChevronLeft } from 'lucide-react';
 
 interface AdminRequestTableProps {
   requests: ServiceRequest[];
@@ -26,7 +28,10 @@ const AdminRequestTable: React.FC<AdminRequestTableProps> = ({ requests, onUpdat
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
-  const filteredRequests = requests.filter(r => {
+  // Filter out archived requests from active view
+  const activeRequests = requests.filter(r => !r.isArchived);
+
+  const filteredRequests = activeRequests.filter(r => {
     const matchesFilter = filter === 'ALL' || r.status === filter;
     const matchesSearch = r.title.toLowerCase().includes(search.toLowerCase()) || 
                           r.description.toLowerCase().includes(search.toLowerCase()) ||
@@ -99,12 +104,13 @@ const AdminRequestTable: React.FC<AdminRequestTableProps> = ({ requests, onUpdat
   };
 
   const activeRequest = selectedRequest ? requests.find(r => r.id === selectedRequest.id) : null;
+  const activeComments = activeRequest?.comments || [];
 
   useEffect(() => {
     if (activeRequest && messagesEndRef.current) {
         messagesEndRef.current.scrollIntoView({ behavior: 'smooth' });
     }
-  }, [activeRequest?.comments.length, activeRequest]);
+  }, [activeComments.length, activeRequest]);
 
   return (
     <div className="space-y-6 relative">
@@ -148,17 +154,28 @@ const AdminRequestTable: React.FC<AdminRequestTableProps> = ({ requests, onUpdat
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-50">
-              {filteredRequests.map((req) => (
+              {filteredRequests.map((req) => {
+                const comments = req.comments || [];
+                const displayImages = req.images && req.images.length > 0 
+                                      ? req.images 
+                                      : (req.imageUrl ? [req.imageUrl] : []);
+                
+                return (
                 <tr key={req.id} className="hover:bg-sky-50/30 transition-colors group">
                   <td className="px-6 py-5">
                     <div className="flex items-start space-x-4">
-                      {req.imageUrl ? (
+                      {displayImages.length > 0 ? (
                         <button 
-                          onClick={() => setViewImage(req.imageUrl!)}
+                          onClick={() => setViewImage(displayImages[0])}
                           className="w-16 h-16 rounded-xl bg-slate-100 border border-slate-200 overflow-hidden flex-shrink-0 cursor-zoom-in relative group/img shadow-sm"
                         >
-                          <img src={req.imageUrl} alt="Attachment" className="w-full h-full object-cover transition-transform group-hover/img:scale-110" />
+                          <img src={displayImages[0]} alt="Attachment" className="w-full h-full object-cover transition-transform group-hover/img:scale-110" />
                           <div className="absolute inset-0 bg-black/0 group-hover/img:bg-black/10 transition-colors" />
+                          {displayImages.length > 1 && (
+                             <div className="absolute bottom-0 right-0 bg-black/60 text-white text-[10px] px-1 font-bold rounded-tl-lg">
+                                +{displayImages.length - 1}
+                             </div>
+                          )}
                         </button>
                       ) : (
                         <div className="w-16 h-16 rounded-xl bg-slate-50 border border-slate-100 flex items-center justify-center text-slate-300 flex-shrink-0 shadow-inner">
@@ -211,22 +228,24 @@ const AdminRequestTable: React.FC<AdminRequestTableProps> = ({ requests, onUpdat
                     </div>
                   </td>
                   <td className="px-6 py-5 text-center">
-                    <button onClick={() => handleOpenChat(req)} className={`p-2.5 rounded-xl relative transition-all ${req.comments.some(c => c.role === UserRole.STUDENT) ? 'text-sky-600 bg-sky-50 hover:bg-sky-100' : 'text-slate-400 hover:text-sky-600 hover:bg-slate-50'}`}>
+                    <button onClick={() => handleOpenChat(req)} className={`p-2.5 rounded-xl relative transition-all ${comments.some(c => c.role === UserRole.STUDENT) ? 'text-sky-600 bg-sky-50 hover:bg-sky-100' : 'text-slate-400 hover:text-sky-600 hover:bg-slate-50'}`}>
                       <MessageSquare size={20} />
-                      {req.comments.length > 0 && <span className="absolute -top-1 -right-1 bg-rose-500 text-white text-[10px] font-bold w-4 h-4 rounded-full flex items-center justify-center border-2 border-white">{req.comments.length}</span>}
+                      {comments.length > 0 && <span className="absolute -top-1 -right-1 bg-rose-500 text-white text-[10px] font-bold w-4 h-4 rounded-full flex items-center justify-center border-2 border-white">{comments.length}</span>}
                     </button>
                   </td>
                   <td className="px-6 py-5 text-right">
-                    <button onClick={() => handleDeleteClick(req)} className="p-2.5 text-slate-400 hover:text-rose-600 hover:bg-rose-50 rounded-xl transition-all"><Trash2 size={20} /></button>
+                    <button onClick={() => handleDeleteClick(req)} className="p-2.5 text-slate-400 hover:text-rose-600 hover:bg-rose-50 rounded-xl transition-all" title="Delete">
+                      <Trash2 size={20} />
+                    </button>
                   </td>
                 </tr>
-              ))}
+              )})}
             </tbody>
           </table>
         </div>
         {filteredRequests.length === 0 && (
           <div className="p-12 text-center text-slate-400">
-             No requests found.
+             No active requests found.
           </div>
         )}
       </div>
@@ -245,7 +264,7 @@ const AdminRequestTable: React.FC<AdminRequestTableProps> = ({ requests, onUpdat
                 <AlertTriangle className="text-rose-600" size={28} />
              </div>
              <h3 className="text-lg font-bold mb-2 text-slate-800">Delete Request?</h3>
-             <p className="text-slate-500 text-sm mb-6">This action cannot be undone. The request record will be permanently removed.</p>
+             <p className="text-slate-500 text-sm mb-6">This request will be moved to the <b>History</b> archive.</p>
              <div className="flex gap-3">
                 <button onClick={() => setRequestToDelete(null)} className="flex-1 px-4 py-3 bg-slate-100 rounded-xl font-bold text-slate-600 hover:bg-slate-200 transition-colors">Cancel</button>
                 <button onClick={confirmDelete} className="flex-1 px-4 py-3 bg-rose-500 text-white rounded-xl font-bold hover:bg-rose-600 shadow-lg shadow-rose-200 transition-colors">Delete</button>
@@ -287,11 +306,22 @@ const AdminRequestTable: React.FC<AdminRequestTableProps> = ({ requests, onUpdat
                            onContextMenu={(e) => handleMessageLongPress(e, activeRequest.id)}
                         >
                            <p className="text-xs font-bold text-slate-500 mb-2 uppercase tracking-wider">{activeRequest.userName}</p>
-                           {activeRequest.imageUrl && (
+                           
+                           {/* Multiple Image Display in Chat Context */}
+                           {(activeRequest.images && activeRequest.images.length > 0) ? (
+                              <div className="mb-3 grid grid-cols-2 gap-1 rounded-xl overflow-hidden border border-slate-100 bg-slate-50">
+                                {activeRequest.images.map((img, idx) => (
+                                  <div key={idx} onClick={(e) => { e.stopPropagation(); setViewImage(img); }} className="aspect-square relative cursor-zoom-in">
+                                      <img src={img} className="w-full h-full object-cover" />
+                                  </div>
+                                ))}
+                              </div>
+                           ) : activeRequest.imageUrl && (
                               <button onClick={(e) => { e.stopPropagation(); setViewImage(activeRequest.imageUrl!); }} className="mb-3 block w-full rounded-xl overflow-hidden border border-slate-100 bg-slate-50">
                                   <img src={activeRequest.imageUrl} className="w-full h-auto max-h-48 object-cover" />
                               </button>
                            )}
+
                            <p className="text-sm text-slate-800 whitespace-pre-wrap font-medium leading-relaxed">{activeRequest.description}</p>
                            
                            {/* Reactions on Main Request */}
@@ -322,9 +352,10 @@ const AdminRequestTable: React.FC<AdminRequestTableProps> = ({ requests, onUpdat
                  </div>
 
                  {/* Comments */}
-                 {activeRequest.comments.map((comment, idx) => {
+                 {activeComments.map((comment, idx) => {
                     const isAdmin = comment.role === UserRole.ADMIN;
                     const isReactionOpen = activeReactionId === comment.id;
+                    const commentReactions = comment.reactions || [];
                     return (
                       <div key={idx} className={`flex flex-col ${isAdmin ? 'items-end' : 'items-start'} relative group`}>
                           <div className={`flex items-end max-w-[85%] ${isAdmin ? 'flex-row-reverse' : 'flex-row'}`}>
@@ -344,10 +375,10 @@ const AdminRequestTable: React.FC<AdminRequestTableProps> = ({ requests, onUpdat
                                  <p className="whitespace-pre-wrap font-medium leading-relaxed">{comment.text}</p>
 
                                  {/* Reactions Display */}
-                                 {comment.reactions && comment.reactions.length > 0 && (
+                                 {commentReactions.length > 0 && (
                                    <div className={`absolute -bottom-3 ${isAdmin ? '-left-2' : '-right-2'} bg-white border border-slate-200 shadow-sm rounded-full px-1.5 py-0.5 flex items-center space-x-0.5 z-10`}>
-                                     {Array.from(new Set(comment.reactions.map(r => r.emoji))).map(e => <span key={e} className="text-xs">{e}</span>)}
-                                     <span className="text-[10px] text-slate-500 font-bold ml-1">{comment.reactions.length}</span>
+                                     {Array.from(new Set(commentReactions.map(r => r.emoji))).map(e => <span key={e} className="text-xs">{e}</span>)}
+                                     <span className="text-[10px] text-slate-500 font-bold ml-1">{commentReactions.length}</span>
                                    </div>
                                  )}
 

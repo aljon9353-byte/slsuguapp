@@ -1,4 +1,5 @@
 
+
 export enum UserRole {
   STUDENT = 'STUDENT',
   FACULTY = 'FACULTY',
@@ -50,13 +51,15 @@ export interface ServiceRequest {
   status: RequestStatus;
   createdAt: string;
   updatedAt: string;
-  imageUrl?: string; // Base64 or URL
+  imageUrl?: string; // Legacy: Single image Base64 or URL
+  images?: string[]; // New: Array of images (Max 5)
   rating?: number; // 1-5
   feedback?: string;
   comments: Comment[];
   aiAnalysis?: string; // Short AI summary
   assignedTo?: string; // Department or Staff Name
   reactions?: Reaction[]; // Added to allow reacting to the main request
+  isArchived?: boolean; // New field for Soft Delete / History
 }
 
 export interface User {

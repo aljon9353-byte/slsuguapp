@@ -1,17 +1,18 @@
 
-import { GoogleGenAI, Type, Schema } from "@google/genai";
+import { GoogleGenAI, Type } from "@google/genai";
 import { RequestCategory } from '../types';
 
-const apiKey = process.env.API_KEY || '';
-const ai = new GoogleGenAI({ apiKey });
+// Initializing the GoogleGenAI instance directly with the API key from environment variables as per guidelines.
+const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
 
 export const analyzeServiceRequest = async (description: string, imageBase64?: string) => {
-  if (!apiKey) {
+  if (!process.env.API_KEY) {
     console.warn("No API Key provided for Gemini.");
     return null;
   }
 
-  const modelId = "gemini-2.5-flash"; 
+  // Using gemini-3-flash-preview as recommended for basic text tasks like summarization and classification.
+  const modelId = "gemini-3-flash-preview"; 
 
   const prompt = `
     Analyze the following campus service request description. 
@@ -19,11 +20,19 @@ export const analyzeServiceRequest = async (description: string, imageBase64?: s
     Also provide a very brief, technical 1-sentence summary of the issue.
   `;
 
-  const schema: Schema = {
+  // Defined the response schema following the Type enumeration and structure for JSON output.
+  const responseSchema = {
     type: Type.OBJECT,
     properties: {
-      category: { type: Type.STRING, enum: Object.values(RequestCategory) },
-      summary: { type: Type.STRING }
+      category: { 
+        type: Type.STRING, 
+        enum: Object.values(RequestCategory),
+        description: 'The classified category of the service request'
+      },
+      summary: { 
+        type: Type.STRING,
+        description: 'A brief technical summary of the request'
+      }
     },
     required: ["category", "summary"]
   };
@@ -36,10 +45,11 @@ export const analyzeServiceRequest = async (description: string, imageBase64?: s
       ],
       config: {
         responseMimeType: "application/json",
-        responseSchema: schema
+        responseSchema: responseSchema
       }
     });
 
+    // Extracting generated text using the .text property from the response object.
     const text = response.text;
     if (!text) return null;
 

@@ -1,20 +1,33 @@
-import React, { useState } from 'react';
+
+
+import React, { useState, useMemo } from 'react';
 import { User, UserRole } from '../types';
-import { Search, Shield, CheckCircle, XCircle, Trash2, AlertTriangle, User as UserIcon } from 'lucide-react';
+import { Search, Shield, CheckCircle, XCircle, Trash2, AlertTriangle, User as UserIcon, Lock } from 'lucide-react';
 
 interface AdminUserTableProps {
   users: User[];
   currentUser: User;
   onToggleVerify: (id: string) => void;
-  onChangeRole: (id: string, role: UserRole) => void;
   onDelete: (id: string) => void;
 }
 
-const AdminUserTable: React.FC<AdminUserTableProps> = ({ users, currentUser, onToggleVerify, onChangeRole, onDelete }) => {
+const AdminUserTable: React.FC<AdminUserTableProps> = ({ users, currentUser, onToggleVerify, onDelete }) => {
   const [search, setSearch] = useState('');
   const [userToDelete, setUserToDelete] = useState<User | null>(null);
 
-  const filteredUsers = users.filter(u => 
+  // Deduplicate users based on email to ensure unique entries
+  const uniqueUsers = useMemo(() => {
+    const map = new Map<string, User>();
+    users.forEach(user => {
+      const emailKey = user.email.toLowerCase().trim();
+      if (!map.has(emailKey)) {
+        map.set(emailKey, user);
+      }
+    });
+    return Array.from(map.values());
+  }, [users]);
+
+  const filteredUsers = uniqueUsers.filter(u => 
     u.name.toLowerCase().includes(search.toLowerCase()) || 
     u.email.toLowerCase().includes(search.toLowerCase())
   );
@@ -76,20 +89,21 @@ const AdminUserTable: React.FC<AdminUserTableProps> = ({ users, currentUser, onT
                     </div>
                   </td>
                   <td className="px-6 py-5">
-                     <div className="relative">
-                       <select 
-                         value={user.role}
-                         disabled={user.id === currentUser.id}
-                         onChange={(e) => onChangeRole(user.id, e.target.value as UserRole)}
-                         className={`text-xs border border-slate-200 bg-white rounded-lg px-3 py-1.5 font-bold text-slate-600 focus:ring-2 focus:ring-sky-500/20 focus:border-sky-500 outline-none appearance-none pr-8 shadow-sm ${user.id === currentUser.id ? 'opacity-50 cursor-not-allowed bg-slate-50' : 'cursor-pointer hover:border-sky-300'}`}
-                       >
-                          {Object.values(UserRole).map(role => (
-                            <option key={role} value={role}>{role}</option>
-                          ))}
-                       </select>
-                       <div className="pointer-events-none absolute inset-y-0 right-0 flex items-center px-2 text-slate-400">
-                          <svg className="fill-current h-4 w-4" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20"><path d="M9.293 12.95l.707.707L15.657 8l-1.414-1.414L10 10.828 5.757 6.586 4.343 8z"/></svg>
-                       </div>
+                     <div className="flex items-center space-x-2">
+                        <span className={`text-xs px-3 py-1.5 rounded-lg font-bold border shadow-sm flex items-center ${
+                             user.role === UserRole.ADMIN ? 'bg-purple-50 text-purple-700 border-purple-100' :
+                             user.role === UserRole.FACULTY ? 'bg-amber-50 text-amber-700 border-amber-100' :
+                             user.role === UserRole.STAFF ? 'bg-orange-50 text-orange-700 border-orange-100' :
+                             'bg-sky-50 text-sky-700 border-sky-100'
+                        }`}>
+                           {user.role}
+                        </span>
+                        <div className="group/tooltip relative">
+                           <Lock size={14} className="text-slate-300" />
+                           <span className="absolute bottom-full left-1/2 -translate-x-1/2 mb-2 px-2 py-1 bg-slate-800 text-white text-[10px] rounded opacity-0 group-hover/tooltip:opacity-100 transition-opacity whitespace-nowrap pointer-events-none">
+                              Role cannot be changed
+                           </span>
+                        </div>
                      </div>
                   </td>
                   <td className="px-6 py-5">

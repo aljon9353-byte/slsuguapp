@@ -1,3 +1,4 @@
+
 import React, { useState, useEffect } from 'react';
 import Layout from './components/Layout';
 import Auth from './components/Auth';
@@ -6,247 +7,260 @@ import RequestList from './components/RequestList';
 import AdminDashboard from './components/AdminDashboard';
 import AdminRequestTable from './components/AdminRequestTable';
 import AdminUserTable from './components/AdminUserTable';
+import AdminHistory from './components/AdminHistory';
+import AdminAbout from './components/AdminAbout';
 import { UserRole, ServiceRequest, RequestStatus, User, Comment, Reaction } from './types';
-import { getRequests, saveRequest, deleteRequest, getUsers, saveUser, deleteUser, getCurrentUser, setCurrentUser, generateId } from './services/storageService';
+import { 
+  saveRequest, deleteRequest, restoreRequest, permanentDeleteRequest, 
+  saveUser, deleteUser, getCurrentUser, setCurrentUser, generateId,
+  subscribeToRequests, subscribeToUsers 
+} from './services/storageService';
+import { Loader2 } from 'lucide-react';
 
 const App: React.FC = () => {
   const [user, setUser] = useState<User | null>(null);
   const [currentView, setCurrentView] = useState<string>('user-home');
   const [requests, setRequests] = useState<ServiceRequest[]>([]);
   const [users, setUsers] = useState<User[]>([]);
+  const [isDataLoading, setIsDataLoading] = useState(true);
+  const [showFailsafeButton, setShowFailsafeButton] = useState(false);
 
-  // Load initial data
+  // INITIALIZATION & SUBSCRIPTIONS
   useEffect(() => {
-    setRequests(getRequests());
-    setUsers(getUsers());
-    const sessionUser = getCurrentUser();
-    if (sessionUser) {
-      setUser(sessionUser);
-      // If admin, default to dashboard, else user home
-      if (sessionUser.role === UserRole.ADMIN) {
-        setCurrentView('admin-dashboard');
+    // 1. Load Session Robustly
+    try {
+      const sessionUser = getCurrentUser();
+      // Ensure session user has basic required properties
+      if (sessionUser && sessionUser.id && sessionUser.email) {
+        setUser(sessionUser);
+        if (sessionUser.role === UserRole.ADMIN) {
+          setCurrentView('admin-dashboard');
+        }
+      } else {
+        // Clear invalid session
+        setCurrentUser(null);
       }
+    } catch (e) {
+      console.error("Failed to load session:", e);
+      setCurrentUser(null);
     }
+
+    // 2. Subscribe to Real-time Data
+    let requestsLoaded = false;
+    let usersLoaded = false;
+
+    const forceTimer = setTimeout(() => {
+      setShowFailsafeButton(true);
+    }, 4000);
+
+    const safetyTimer = setTimeout(() => {
+      if (isDataLoading) {
+        setIsDataLoading(false);
+      }
+    }, 8000);
+
+    const checkLoading = () => {
+      if (requestsLoaded && usersLoaded) {
+        setIsDataLoading(false);
+        clearTimeout(safetyTimer);
+        clearTimeout(forceTimer);
+      }
+    };
+
+    const unsubscribeRequests = subscribeToRequests((data) => {
+      // Ensure data is an array
+      setRequests(Array.isArray(data) ? data : []);
+      requestsLoaded = true;
+      checkLoading();
+    });
+
+    const unsubscribeUsers = subscribeToUsers((data) => {
+      // Ensure data is an array
+      setUsers(Array.isArray(data) ? data : []);
+      usersLoaded = true;
+      checkLoading();
+    });
+
+    return () => {
+      clearTimeout(safetyTimer);
+      clearTimeout(forceTimer);
+      if (typeof unsubscribeRequests === 'function') unsubscribeRequests();
+      if (typeof unsubscribeUsers === 'function') unsubscribeUsers();
+    };
   }, []);
 
-  const refreshRequests = () => {
-    setRequests(getRequests());
-  };
-  
-  const refreshUsers = () => {
-    setUsers(getUsers());
-  };
-
   const handleLogin = (loggedInUser: User) => {
+    if (!loggedInUser || !loggedInUser.id) return;
     setUser(loggedInUser);
     setCurrentUser(loggedInUser);
     setCurrentView(loggedInUser.role === UserRole.ADMIN ? 'admin-dashboard' : 'user-home');
   };
 
   const handleLogout = () => {
-    // Refresh users from storage to ensure the Auth component gets the latest data
-    refreshUsers(); 
     setUser(null);
     setCurrentUser(null);
     setCurrentView('user-home');
   };
 
   const handleRegister = (newUser: User) => {
-    saveUser(newUser);
-    refreshUsers();
+    if (newUser && newUser.id) saveUser(newUser);
   };
 
-  const handleCreateRequest = (newRequest: ServiceRequest, updatedUserDetails: Partial<User>) => {
-    // Ensure the request is attached to the current user
-    if (user) {
-      // 1. Save the Request
-      // Note: The newRequest already contains the updated name/role/course etc. from the form
-      saveRequest(newRequest);
-      refreshRequests();
-
-      // 2. Update the User Profile with new details
-      // This ensures the user doesn't have to re-type name/role next time
-      const updatedUser = { ...user, ...updatedUserDetails };
-      saveUser(updatedUser);
-      setUser(updatedUser);
-      setCurrentUser(updatedUser);
-      refreshUsers();
-
-      setCurrentView('user-home');
+  const handleCreateRequest = async (newRequest: ServiceRequest, updatedUserDetails: Partial<User>) => {
+    if (user && user.id) {
+      try {
+        await saveRequest(newRequest);
+        const updatedUser = { ...user, ...updatedUserDetails };
+        await saveUser(updatedUser);
+        setUser(updatedUser);
+        setCurrentUser(updatedUser);
+        setCurrentView('user-home');
+      } catch (error: any) {
+        console.error("Failed to submit request:", error);
+        alert("Unable to submit request. Please check your internet connection.");
+      }
     }
   };
 
   const handleUpdateStatus = (id: string, status: RequestStatus) => {
-    const currentRequests = getRequests();
-    const req = currentRequests.find(r => r.id === id);
-    
+    const req = requests.find(r => r.id === id);
     if (req) {
       const updated = { ...req, status, updatedAt: new Date().toISOString() };
       saveRequest(updated);
-      setRequests(getRequests());
     }
   };
 
   const handleAddComment = (requestId: string, text: string, imageUrl?: string) => {
-    if (!user) return;
-
-    const currentRequests = getRequests();
-    const req = currentRequests.find(r => r.id === requestId);
-    
+    if (!user || !user.id) return;
+    const req = requests.find(r => r.id === requestId);
     if (req) {
       const newComment: Comment = {
         id: generateId(),
-        author: user.name,
+        author: user.name || 'Anonymous',
         role: user.role,
-        text,
+        text: text || '',
         imageUrl,
         timestamp: new Date().toISOString(),
         reactions: []
       };
-      
-      const updated = {
+      saveRequest({
         ...req,
-        comments: [...req.comments, newComment],
+        comments: [...(req.comments || []), newComment],
         updatedAt: new Date().toISOString()
-      };
-
-      saveRequest(updated);
-      setRequests(getRequests());
+      });
     }
   };
 
   const handleToggleReaction = (requestId: string, targetId: string, emoji: string) => {
-    if (!user) return;
-
-    const currentRequests = getRequests();
-    const req = currentRequests.find(r => r.id === requestId);
-
+    if (!user || !user.id) return;
+    const req = requests.find(r => r.id === requestId);
     if (req) {
-      // Helper function to update a reactions array
       const toggleReactionInList = (currentReactions: Reaction[] = []) => {
         const existingIndex = currentReactions.findIndex(r => r.userId === user.id);
         const newReactions = [...currentReactions];
-        
         if (existingIndex >= 0) {
-          if (currentReactions[existingIndex].emoji === emoji) {
-            // Remove if clicking same emoji
-            newReactions.splice(existingIndex, 1);
-          } else {
-            // Update if clicking different emoji
-            newReactions[existingIndex] = { ...newReactions[existingIndex], emoji };
-          }
+          if (currentReactions[existingIndex].emoji === emoji) newReactions.splice(existingIndex, 1);
+          else newReactions[existingIndex] = { ...newReactions[existingIndex], emoji };
         } else {
-          // Add new
           newReactions.push({ emoji, userId: user.id, userName: user.name });
         }
         return newReactions;
       };
 
       let updatedRequest = { ...req };
-
-      // Case 1: Reacting to the Main Request Description
       if (requestId === targetId) {
         updatedRequest.reactions = toggleReactionInList(req.reactions);
-      } 
-      // Case 2: Reacting to a Comment
-      else {
-        updatedRequest.comments = req.comments.map(comment => {
-          if (comment.id === targetId) {
-            return { ...comment, reactions: toggleReactionInList(comment.reactions) };
-          }
+      } else {
+        updatedRequest.comments = (req.comments || []).map(comment => {
+          if (comment.id === targetId) return { ...comment, reactions: toggleReactionInList(comment.reactions) };
           return comment;
         });
       }
-
       saveRequest(updatedRequest);
-      setRequests(getRequests());
     }
   };
 
-  const handleDeleteRequest = (id: string) => {
-    deleteRequest(id);
-    refreshRequests();
-  };
+  const handleDeleteRequest = (id: string) => deleteRequest(id);
+  const handleRestoreRequest = (id: string) => restoreRequest(id);
+  const handlePermanentDelete = (id: string) => permanentDeleteRequest(id);
 
   const handleRateRequest = (id: string, rating: number, feedback: string) => {
-    const currentRequests = getRequests();
-    const req = currentRequests.find(r => r.id === id);
-    if (req) {
-      const updated = { ...req, rating, feedback, updatedAt: new Date().toISOString() };
-      saveRequest(updated);
-      refreshRequests();
-    }
+    const req = requests.find(r => r.id === id);
+    if (req) saveRequest({ ...req, rating, feedback, updatedAt: new Date().toISOString() });
   };
 
-  // User Management Handlers
   const handleToggleVerify = (id: string) => {
     const targetUser = users.find(u => u.id === id);
-    if (targetUser) {
-      const updated = { ...targetUser, isVerified: !targetUser.isVerified };
-      saveUser(updated);
-      refreshUsers();
-    }
-  };
-
-  const handleChangeRole = (id: string, role: UserRole) => {
-    const targetUser = users.find(u => u.id === id);
-    if (targetUser) {
-      const updated = { ...targetUser, role };
-      saveUser(updated);
-      refreshUsers();
-    }
+    if (targetUser) saveUser({ ...targetUser, isVerified: !targetUser.isVerified });
   };
 
   const handleDeleteUser = (id: string) => {
-    if (user && user.id === id) {
-      alert("You cannot delete your own account.");
-      return;
-    }
+    if (user && user.id === id) return alert("You cannot delete your own account.");
     deleteUser(id);
-    refreshUsers();
   };
+
+  if (isDataLoading) {
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-slate-50">
+        <div className="flex flex-col items-center p-6 text-center">
+          <div className="w-16 h-16 bg-white rounded-2xl flex items-center justify-center shadow-lg shadow-sky-100 border border-slate-100 mb-6 animate-bounce">
+             <span className="text-2xl font-black text-transparent bg-clip-text bg-gradient-to-br from-sky-500 to-blue-600">SL</span>
+          </div>
+          <Loader2 className="animate-spin text-sky-500 mb-2" size={32} />
+          <p className="text-slate-500 font-medium animate-pulse">Connecting to SLSU Cloud...</p>
+          
+          {showFailsafeButton && (
+            <button 
+              onClick={() => setIsDataLoading(false)}
+              className="mt-8 text-xs font-bold text-sky-600 bg-white px-4 py-2 rounded-full border border-sky-100 hover:bg-sky-50 transition-colors"
+            >
+              Skip Loading & Continue
+            </button>
+          )}
+        </div>
+      </div>
+    );
+  }
 
   if (!user) {
     return <Auth onLogin={handleLogin} users={users} onRegister={handleRegister} />;
   }
 
   const renderContent = () => {
-    switch (currentView) {
-      case 'user-home':
-        const userRequests = requests.filter(r => r.userId === user.id); 
-        return <RequestList 
-          requests={userRequests} 
-          onRate={handleRateRequest} 
-          onAddComment={handleAddComment} 
-          onReact={handleToggleReaction}
-        />;
-      
-      case 'user-create':
-        return <RequestForm onSubmit={handleCreateRequest} onCancel={() => setCurrentView('user-home')} currentUser={user} />;
-      
-      case 'admin-dashboard':
-        return <AdminDashboard requests={requests} />;
-      
-      case 'admin-requests':
-        return <AdminRequestTable 
-          requests={requests} 
-          onUpdateStatus={handleUpdateStatus} 
-          onDelete={handleDeleteRequest}
-          onAddComment={handleAddComment}
-          onReact={handleToggleReaction}
-        />;
-      
-      case 'admin-users':
-        return <AdminUserTable 
-          users={users} 
-          currentUser={user}
-          onToggleVerify={handleToggleVerify} 
-          onChangeRole={handleChangeRole} 
-          onDelete={handleDeleteUser}
-        />;
-        
-      default:
-        return <div>Not found</div>;
+    try {
+      switch (currentView) {
+        case 'user-home':
+          return <RequestList 
+            requests={requests.filter(r => r.userId === user.id && !r.isArchived)} 
+            onRate={handleRateRequest} 
+            onAddComment={handleAddComment} 
+            onReact={handleToggleReaction}
+          />;
+        case 'user-create':
+          return <RequestForm onSubmit={handleCreateRequest} onCancel={() => setCurrentView('user-home')} currentUser={user} />;
+        case 'admin-dashboard':
+          return <AdminDashboard requests={requests} />;
+        case 'admin-requests':
+          return <AdminRequestTable 
+            requests={requests} 
+            onUpdateStatus={handleUpdateStatus} 
+            onDelete={handleDeleteRequest}
+            onAddComment={handleAddComment}
+            onReact={handleToggleReaction}
+          />;
+        case 'admin-history':
+          return <AdminHistory requests={requests} onRestore={handleRestoreRequest} onPermanentDelete={handlePermanentDelete} />
+        case 'admin-users':
+          return <AdminUserTable users={users} currentUser={user} onToggleVerify={handleToggleVerify} onDelete={handleDeleteUser} />;
+        case 'admin-about':
+        case 'user-about':
+          return <AdminAbout />;
+        default:
+          return <div className="p-8 text-center text-slate-500 font-medium">View not found</div>;
+      }
+    } catch (e) {
+      console.error("View render error:", e);
+      return <div className="p-12 text-center text-rose-500 font-bold">Error rendering this page. Please try another menu.</div>;
     }
   };
 

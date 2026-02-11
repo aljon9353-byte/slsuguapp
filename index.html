@@ -2,15 +2,18 @@
 <html lang="en">
   <head>
     <meta charset="UTF-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>SLSU Gu App - Service Reporting</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=5.0, user-scalable=yes" />
+    <title>SLSU Gu App</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+    
+    <!-- Polyfill for older browsers to support import maps -->
+    <script async src="https://ga.jspm.io/npm:es-module-shims@1.10.0/dist/es-module-shims.js"></script>
+
     <style>
       body {
         font-family: 'Inter', sans-serif;
       }
-      /* Custom Scrollbar for nicer UI */
       ::-webkit-scrollbar {
         width: 8px;
         height: 8px;
@@ -37,20 +40,50 @@
         backdrop-filter: blur(10px);
       }
     </style>
-  <script type="importmap">
+    
+    <script type="importmap">
 {
   "imports": {
-    "recharts": "https://aistudiocdn.com/recharts@^3.5.1",
-    "react-dom/": "https://aistudiocdn.com/react-dom@^19.2.1/",
-    "react/": "https://aistudiocdn.com/react@^19.2.1/",
-    "react": "https://aistudiocdn.com/react@^19.2.1",
-    "@google/genai": "https://aistudiocdn.com/@google/genai@^1.31.0",
-    "lucide-react": "https://aistudiocdn.com/lucide-react@^0.556.0",
-    "uuid": "https://aistudiocdn.com/uuid@^13.0.0"
+    "react": "https://esm.sh/react@19.0.0",
+    "react-dom": "https://esm.sh/react-dom@19.0.0",
+    "react-dom/client": "https://esm.sh/react-dom@19.0.0/client",
+    "recharts": "https://esm.sh/recharts@2.15.0",
+    "@google/genai": "https://esm.sh/@google/genai@1.31.0",
+    "lucide-react": "https://esm.sh/lucide-react@0.473.0",
+    "uuid": "https://esm.sh/uuid@11.0.3",
+    "firebase/app": "https://esm.sh/firebase@10.8.0/app",
+    "firebase/database": "https://esm.sh/firebase@10.8.0/database",
+    "react/": "https://esm.sh/react@^19.2.4/",
+    "firebase/": "https://esm.sh/firebase@^12.9.0/",
+    "react-dom/": "https://esm.sh/react-dom@^19.2.4/"
   }
 }
 </script>
-</head>
+
+    <!-- Global Error Handler to catch early script crashes -->
+    <script>
+      window.onerror = function(msg, url, lineNo, columnNo, error) {
+        console.error('Global Error Captured:', msg, error);
+        const root = document.getElementById('root');
+        if (root && root.innerHTML.trim() === '') {
+          root.innerHTML = `
+            <div style="height: 100vh; display: flex; align-items: center; justify-content: center; background: #f8fafc; font-family: sans-serif; padding: 20px; text-align: center;">
+              <div style="background: white; padding: 40px; border-radius: 24px; box-shadow: 0 10px 25px -5px rgba(0,0,0,0.1); max-width: 400px; border: 1px solid #e2e8f0;">
+                <h2 style="color: #1e293b; margin-bottom: 12px;">App Connection Error</h2>
+                <p style="color: #64748b; font-size: 14px; line-height: 1.6; margin-bottom: 24px;">
+                  We had trouble loading the SLSU Gu App resources. This usually happens on slow networks or older browsers.
+                </p>
+                <button onclick="location.reload()" style="background: #0ea5e9; color: white; border: none; padding: 12px 24px; border-radius: 12px; font-weight: bold; cursor: pointer;">
+                  Try Again
+                </button>
+              </div>
+            </div>
+          `;
+        }
+        return false;
+      };
+    </script>
+  </head>
   <body class="bg-slate-100 text-slate-900 antialiased selection:bg-indigo-100 selection:text-indigo-700">
     <div id="root"></div>
   </body>

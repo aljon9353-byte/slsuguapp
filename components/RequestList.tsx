@@ -1,4 +1,5 @@
 
+
 import React, { useState } from 'react';
 import { ServiceRequest, RequestStatus, UserRole, RequestCategory } from '../types';
 import { ChevronDown, ChevronUp, Star, MapPin, Calendar, Image as ImageIcon, MessageSquare, Send, User, Zap, Monitor, AlertTriangle, Trash2, FileText, LayoutGrid } from 'lucide-react';
@@ -111,6 +112,13 @@ const RequestList: React.FC<RequestListProps> = ({ requests, onRate, onAddCommen
         {requests.map((req) => {
           const { color, icon: Icon, accent } = getCategoryDetails(req.category);
           const isCompleted = req.status === RequestStatus.COMPLETED;
+          const comments = req.comments || [];
+          const reactions = req.reactions || [];
+          
+          // Helper to get images array, fallback to legacy imageUrl if needed
+          const displayImages = req.images && req.images.length > 0 
+                                ? req.images 
+                                : (req.imageUrl ? [req.imageUrl] : []);
           
           return (
             <div key={req.id} className={`bg-white/80 backdrop-blur-md rounded-3xl border border-white/60 shadow-sm overflow-hidden transition-all hover:shadow-lg hover:shadow-sky-100/50 hover:-translate-y-0.5 group ${expandedId === req.id ? 'ring-2 ring-sky-500/10' : ''}`}>
@@ -129,26 +137,32 @@ const RequestList: React.FC<RequestListProps> = ({ requests, onRate, onAddCommen
                    <div className="min-w-0 flex-1">
                      <h3 className="text-lg font-bold text-slate-800 group-hover:text-sky-600 transition-colors leading-tight truncate">{req.title}</h3>
                      <div className="flex items-center text-xs text-slate-500 mt-2 space-x-3 flex-wrap">
-                       <span className="flex items-center bg-slate-50 px-3 py-1 rounded-full border border-slate-100 text-slate-600 font-semibold">
+                       <span className="flex items-center bg-slate-50 px-3 py-1 rounded-full border border-slate-100 text-slate-600 font-semibold mb-1">
                           <Calendar size={12} className="mr-1.5 text-slate-400"/> 
                           {new Date(req.createdAt).toLocaleDateString()}
                        </span>
-                       <span className="flex items-center bg-slate-50 px-3 py-1 rounded-full border border-slate-100 text-slate-600 font-semibold">
+                       <span className="flex items-center bg-slate-50 px-3 py-1 rounded-full border border-slate-100 text-slate-600 font-semibold mb-1">
                           <MapPin size={12} className="mr-1.5 text-slate-400"/> 
                           {req.location}
                        </span>
                      </div>
                    </div>
 
-                   {/* Image Thumbnail in Collapsed View */}
-                   {req.imageUrl && (
-                      <div className="hidden sm:block w-14 h-14 rounded-xl border border-slate-200 overflow-hidden shadow-sm flex-shrink-0 bg-slate-50">
-                         <img src={req.imageUrl} alt="Request" className="w-full h-full object-cover" />
+                   {/* Image Thumbnail in Collapsed View - Show first image */}
+                   {displayImages.length > 0 && (
+                      <div className="hidden sm:block w-14 h-14 rounded-xl border border-slate-200 overflow-hidden shadow-sm flex-shrink-0 bg-slate-50 relative">
+                         <img src={displayImages[0]} alt="Request" className="w-full h-full object-cover" />
+                         {displayImages.length > 1 && (
+                            <div className="absolute inset-0 bg-black/40 flex items-center justify-center text-white text-xs font-bold">
+                               +{displayImages.length - 1}
+                            </div>
+                         )}
                       </div>
                    )}
                  </div>
 
-                 <div className="flex items-center justify-between md:justify-end gap-3 pl-[4.5rem] md:pl-0">
+                 {/* Status & Toggle Arrow */}
+                 <div className="flex items-center justify-between md:justify-end gap-3 pl-0 md:pl-0 mt-2 md:mt-0">
                      {/* Status Badge */}
                      <span className={`px-3 py-1.5 rounded-full text-xs font-bold border flex items-center shadow-sm ${
                         req.status === RequestStatus.COMPLETED ? 'bg-emerald-50 text-emerald-600 border-emerald-100' :
@@ -165,10 +179,10 @@ const RequestList: React.FC<RequestListProps> = ({ requests, onRate, onAddCommen
                        {req.status}
                      </span>
 
-                     {req.comments.length > 0 && (
+                     {comments.length > 0 && (
                        <div className="flex items-center text-sky-600 text-xs font-bold bg-sky-50 px-3 py-1.5 rounded-full border border-sky-100">
                           <MessageSquare size={14} className="mr-1.5" />
-                          {req.comments.length}
+                          {comments.length}
                        </div>
                      )}
                     
@@ -180,8 +194,8 @@ const RequestList: React.FC<RequestListProps> = ({ requests, onRate, onAddCommen
 
               {/* Expanded Content */}
               {expandedId === req.id && (
-                <div className="p-6 bg-slate-50/50 border-t border-slate-100 animate-fadeIn">
-                   <div className="flex flex-col xl:flex-row gap-8">
+                <div className="p-4 md:p-6 bg-slate-50/50 border-t border-slate-100 animate-fadeIn">
+                   <div className="flex flex-col xl:flex-row gap-6 md:gap-8">
                       <div className="flex-1 space-y-6">
                         
                         {/* Main Description */}
@@ -199,12 +213,12 @@ const RequestList: React.FC<RequestListProps> = ({ requests, onRate, onAddCommen
                               {req.description}
                               
                                {/* Reactions */}
-                               {req.reactions && req.reactions.length > 0 && (
+                               {reactions.length > 0 && (
                                   <div className="mt-4 flex flex-wrap gap-2">
-                                     {Array.from(new Set(req.reactions.map(r => r.emoji))).map(emoji => (
+                                     {Array.from(new Set(reactions.map(r => r.emoji))).map(emoji => (
                                        <span key={emoji} className="bg-white border border-slate-200 px-2 py-1 rounded-full text-xs flex items-center shadow-sm">
                                          <span className="mr-1">{emoji}</span>
-                                         <span className="font-bold text-slate-600">{req.reactions?.filter(r => r.emoji === emoji).length}</span>
+                                         <span className="font-bold text-slate-600">{reactions.filter(r => r.emoji === emoji).length}</span>
                                        </span>
                                      ))}
                                   </div>
@@ -235,11 +249,11 @@ const RequestList: React.FC<RequestListProps> = ({ requests, onRate, onAddCommen
                                   <span className="text-xs text-slate-400 font-medium block">Direct line to admin</span>
                                 </div>
                              </div>
-                             <span className="text-xs font-bold bg-sky-100 text-sky-700 px-2.5 py-1 rounded-full">{req.comments.length}</span>
+                             <span className="text-xs font-bold bg-sky-100 text-sky-700 px-2.5 py-1 rounded-full">{comments.length}</span>
                           </div>
                           
                           <div className="flex-1 p-6 overflow-y-auto space-y-6 bg-slate-50/50 custom-scrollbar">
-                             {req.comments.length === 0 ? (
+                             {comments.length === 0 ? (
                                <div className="h-full flex flex-col items-center justify-center text-slate-400">
                                   <div className="w-16 h-16 bg-slate-100 rounded-full flex items-center justify-center mb-4">
                                     <MessageSquare size={24} className="text-slate-300" />
@@ -248,9 +262,10 @@ const RequestList: React.FC<RequestListProps> = ({ requests, onRate, onAddCommen
                                   <p className="text-xs">Start the conversation below.</p>
                                </div>
                              ) : (
-                               req.comments.map((comment, i) => {
+                               comments.map((comment, i) => {
                                  const isAdmin = comment.role === UserRole.ADMIN;
                                  const isReactionOpen = activeReactionId === comment.id;
+                                 const commentReactions = comment.reactions || [];
                                  return (
                                    <div key={i} className={`flex flex-col ${isAdmin ? 'items-start' : 'items-end'} relative group`}>
                                       <div className={`flex items-end max-w-[85%] ${isAdmin ? 'flex-row' : 'flex-row-reverse'}`}>
@@ -280,10 +295,10 @@ const RequestList: React.FC<RequestListProps> = ({ requests, onRate, onAddCommen
                                             <p className="leading-relaxed font-medium">{comment.text}</p>
 
                                             {/* Reactions Display */}
-                                            {comment.reactions && comment.reactions.length > 0 && (
+                                            {commentReactions.length > 0 && (
                                               <div className={`absolute -bottom-3 ${isAdmin ? '-right-2' : '-left-2'} bg-white border border-slate-200 shadow-sm rounded-full px-1.5 py-0.5 flex items-center space-x-0.5 z-10 scale-90`}>
-                                                {Array.from(new Set(comment.reactions.map(r => r.emoji))).map(e => <span key={e} className="text-xs">{e}</span>)}
-                                                <span className="text-[10px] text-slate-500 font-bold ml-1">{comment.reactions.length}</span>
+                                                {Array.from(new Set(commentReactions.map(r => r.emoji))).map(e => <span key={e} className="text-xs">{e}</span>)}
+                                                <span className="text-[10px] text-slate-500 font-bold ml-1">{commentReactions.length}</span>
                                               </div>
                                             )}
 
@@ -347,14 +362,24 @@ const RequestList: React.FC<RequestListProps> = ({ requests, onRate, onAddCommen
                       </div>
 
                       <div className="w-full xl:w-80 flex flex-col space-y-6">
-                         {req.imageUrl && (
+                         {displayImages.length > 0 && (
                            <div className="bg-white p-4 rounded-3xl border border-white shadow-sm">
-                             <h4 className="text-xs font-extrabold text-slate-400 uppercase tracking-wider mb-3 pl-2">Attachment</h4>
-                             <div className="rounded-2xl overflow-hidden border border-slate-100 cursor-pointer group relative shadow-inner bg-slate-50" onClick={() => setViewImage(req.imageUrl!)}>
-                               <img src={req.imageUrl} className="w-full h-48 object-cover group-hover:scale-105 transition-transform duration-500 mix-blend-multiply" />
-                               <div className="absolute inset-0 bg-black/0 group-hover:bg-black/20 transition-colors flex items-center justify-center">
-                                  <ImageIcon size={24} className="text-white opacity-0 group-hover:opacity-100 transition-opacity drop-shadow-md" />
-                               </div>
+                             <h4 className="text-xs font-extrabold text-slate-400 uppercase tracking-wider mb-3 pl-2">
+                                Attachments ({displayImages.length})
+                             </h4>
+                             <div className="grid grid-cols-2 gap-2">
+                                {displayImages.map((img, idx) => (
+                                   <div 
+                                      key={idx} 
+                                      className="rounded-xl overflow-hidden border border-slate-100 cursor-pointer group relative shadow-inner bg-slate-50 aspect-square" 
+                                      onClick={() => setViewImage(img)}
+                                   >
+                                      <img src={img} className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500" />
+                                      <div className="absolute inset-0 bg-black/0 group-hover:bg-black/20 transition-colors flex items-center justify-center">
+                                         <ImageIcon size={20} className="text-white opacity-0 group-hover:opacity-100 transition-opacity drop-shadow-md" />
+                                      </div>
+                                   </div>
+                                ))}
                              </div>
                            </div>
                          )}

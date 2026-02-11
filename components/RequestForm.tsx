@@ -1,8 +1,9 @@
+
 import React, { useState, useRef, useEffect } from 'react';
 import { RequestCategory, ServiceRequest, RequestStatus, User, UserRole } from '../types';
 import { analyzeServiceRequest } from '../services/geminiService';
 import { generateId } from '../services/storageService';
-import { Loader2, Sparkles, Upload, MapPin, CheckCircle, FileText, ChevronRight, ChevronDown, User as UserIcon, Shield, GraduationCap, Briefcase } from 'lucide-react';
+import { Loader2, Sparkles, Upload, MapPin, CheckCircle, FileText, ChevronRight, ChevronDown, User as UserIcon, Shield, GraduationCap, Briefcase, X, ImageIcon } from 'lucide-react';
 
 interface RequestFormProps {
   onSubmit: (req: ServiceRequest, updatedUser: Partial<User>) => void;
@@ -24,15 +25,17 @@ const RequestForm: React.FC<RequestFormProps> = ({ onSubmit, onCancel, currentUs
   const [description, setDescription] = useState('');
   const [location, setLocation] = useState('');
   const [isAnalyzing, setIsAnalyzing] = useState(false);
-  const [image, setImage] = useState<string | null>(null);
+  
+  // Image State - Now supports multiple images
+  const [images, setImages] = useState<string[]>([]);
   const [isProcessingImage, setIsProcessingImage] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   const isAcademic = category === RequestCategory.ACADEMIC;
+  const MAX_IMAGES = 5;
 
   useEffect(() => {
     // If user has default name from email split, encourage them to change it, otherwise keep it
-    // If they have existing specific data, it's already in state via useState init
   }, []);
 
   const handleAnalyze = async () => {
@@ -49,16 +52,27 @@ const RequestForm: React.FC<RequestFormProps> = ({ onSubmit, onCancel, currentUs
   };
 
   const handleImageUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (file) {
+    const files = e.target.files;
+    if (!files || files.length === 0) return;
+
+    const remainingSlots = MAX_IMAGES - images.length;
+    if (files.length > remainingSlots) {
+      alert(`You can only upload a maximum of ${MAX_IMAGES} images. You have ${remainingSlots} slots remaining.`);
+      // Continue but only take the allowed amount? Or just return. Let's return to be safe.
+      return;
+    }
+
+    setIsProcessingImage(true);
+    let processedCount = 0;
+    const newImages: string[] = [];
+
+    Array.from(files).forEach((file: File) => {
       if (!file.type.startsWith('image/')) {
-        alert('Please upload a valid image file.');
+        processedCount++;
         return;
       }
 
-      setIsProcessingImage(true);
       const reader = new FileReader();
-      
       reader.onload = (event) => {
         const img = new Image();
         img.onload = () => {
@@ -86,41 +100,59 @@ const RequestForm: React.FC<RequestFormProps> = ({ onSubmit, onCancel, currentUs
           if (ctx) {
             ctx.drawImage(img, 0, 0, width, height);
             const compressedDataUrl = canvas.toDataURL('image/jpeg', 0.6);
-            setImage(compressedDataUrl);
+            newImages.push(compressedDataUrl);
           }
-          setIsProcessingImage(false);
+          
+          processedCount++;
+          if (processedCount === files.length) {
+            setImages(prev => [...prev, ...newImages]);
+            setIsProcessingImage(false);
+            if (fileInputRef.current) fileInputRef.current.value = ''; // Reset input
+          }
         };
         img.onerror = () => {
-          setIsProcessingImage(false);
-          alert('Failed to process image.');
+          processedCount++;
+          if (processedCount === files.length) setIsProcessingImage(false);
         };
         img.src = event.target?.result as string;
       };
+      reader.onerror = () => {
+         processedCount++;
+         if (processedCount === files.length) setIsProcessingImage(false);
+      };
       
       reader.readAsDataURL(file);
-    }
+    });
+  };
+
+  const removeImage = (indexToRemove: number) => {
+    setImages(prev => prev.filter((_, idx) => idx !== indexToRemove));
   };
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     if (isProcessingImage) return;
 
-    // Validation: Require Image for non-academic requests
-    if (!isAcademic && !image) {
-      alert("Please attach a photo of the issue to proceed.");
-      return;
+    // --- COMPREHENSIVE VALIDATION ---
+    const errors: string[] = [];
+
+    // 1. User Details Validation
+    if (!userName.trim()) errors.push("Full Name is required.");
+    if (userRole === UserRole.STUDENT && !userCourse) errors.push("Course is required for Student role.");
+    if (userRole === UserRole.STAFF && !userStaffPosition) errors.push("Staff Position is required for Staff role.");
+
+    // 2. Request Details Validation
+    if (isAcademic) {
+        if (!description.trim()) errors.push("Message/Description is required for academic requests.");
+    } else {
+        if (!title.trim()) errors.push("Issue Title is required.");
+        if (!location.trim()) errors.push("Location is required.");
+        if (images.length === 0) errors.push("At least one image attachment is required.");
     }
 
-    // Validation: Require Course if Student
-    if (userRole === UserRole.STUDENT && !userCourse) {
-      alert("Please select your Course.");
-      return;
-    }
-
-    // Validation: Require Position if Staff
-    if (userRole === UserRole.STAFF && !userStaffPosition) {
-      alert("Please select your Staff Position.");
-      return;
+    if (errors.length > 0) {
+        alert("Unable to Submit. Please check the following:\n\n• " + errors.join("\n• "));
+        return;
     }
 
     const finalTitle = isAcademic ? 'Academic Document Request' : title;
@@ -131,41 +163,62 @@ const RequestForm: React.FC<RequestFormProps> = ({ onSubmit, onCancel, currentUs
       userId: currentUser.id, 
       userName: userName,
       userRole: userRole,
-      userCourse: userRole === UserRole.STUDENT ? userCourse : undefined,
-      userStaffPosition: userRole === UserRole.STAFF ? userStaffPosition : undefined,
       title: finalTitle,
-      description: description || 'No description provided.', // Handle empty description
+      description: description || 'No description provided.', 
       location: finalLocation,
       category,
       status: RequestStatus.PENDING,
       createdAt: new Date().toISOString(),
       updatedAt: new Date().toISOString(),
       comments: [],
-      imageUrl: image || undefined,
-      aiAnalysis: !isAcademic && isAnalyzing ? 'Pending analysis...' : undefined
     };
 
+    // Add optional properties ONLY if they have valid values
+    if (userRole === UserRole.STUDENT && userCourse) {
+      newRequest.userCourse = userCourse;
+    }
+    if (userRole === UserRole.STAFF && userStaffPosition) {
+      newRequest.userStaffPosition = userStaffPosition;
+    }
+    
+    // Support for multiple images
+    if (images.length > 0) {
+      newRequest.images = images;
+      newRequest.imageUrl = images[0]; // Backward compatibility for legacy code using imageUrl
+    }
+
+    if (!isAcademic && isAnalyzing) {
+      newRequest.aiAnalysis = 'Pending analysis...';
+    }
+
+    // Prepare User Updates
     const updatedUser: Partial<User> = {
       name: userName,
       role: userRole,
-      course: userRole === UserRole.STUDENT ? userCourse : undefined,
-      staffPosition: userRole === UserRole.STAFF ? userStaffPosition : undefined,
     };
+    
+    if (userRole === UserRole.STUDENT) {
+        if (userCourse) updatedUser.course = userCourse;
+    } 
+    
+    if (userRole === UserRole.STAFF) {
+        if (userStaffPosition) updatedUser.staffPosition = userStaffPosition;
+    }
 
     onSubmit(newRequest, updatedUser);
   };
 
   return (
-    <div className="max-w-2xl mx-auto bg-white/80 backdrop-blur-xl rounded-3xl shadow-xl border border-white/60 overflow-hidden relative transition-all hover:shadow-2xl hover:shadow-sky-100">
+    <div className="max-w-2xl mx-auto bg-white/80 backdrop-blur-xl rounded-3xl shadow-xl border border-white/60 overflow-hidden relative transition-all hover:shadow-2xl hover:shadow-sky-100 mb-20">
       {/* Soft header background */}
       <div className="absolute top-0 left-0 w-full h-32 bg-gradient-to-b from-sky-50 to-transparent pointer-events-none" />
 
       {/* Header */}
-      <div className="px-8 py-8 relative z-10">
+      <div className="px-5 py-6 md:px-8 md:py-8 relative z-10">
         <div className="flex items-center justify-between">
             <div>
-              <h2 className="text-2xl font-extrabold text-slate-800 tracking-tight">New Request</h2>
-              <p className="text-sm text-slate-500 font-medium mt-1">Submit a report or service request</p>
+              <h2 className="text-xl md:text-2xl font-extrabold text-slate-800 tracking-tight">New Request</h2>
+              <p className="text-xs md:text-sm text-slate-500 font-medium mt-1">Submit a report or service request</p>
             </div>
             <span className="text-xs font-bold text-sky-600 px-3 py-1 bg-white rounded-full border border-sky-100 flex items-center shadow-sm">
               <span className="w-2 h-2 rounded-full bg-sky-500 mr-2 animate-pulse"></span>
@@ -174,10 +227,10 @@ const RequestForm: React.FC<RequestFormProps> = ({ onSubmit, onCancel, currentUs
         </div>
       </div>
       
-      <form onSubmit={handleSubmit} className="px-8 pb-8 space-y-8 relative z-10">
+      <form onSubmit={handleSubmit} noValidate className="px-5 pb-6 md:px-8 md:pb-8 space-y-6 md:space-y-8 relative z-10">
         
         {/* SECTION: User Details (Moved from Signup) */}
-        <div className="bg-gradient-to-br from-white to-sky-50 p-6 rounded-2xl border border-sky-100 shadow-sm space-y-6">
+        <div className="bg-gradient-to-br from-white to-sky-50 p-5 md:p-6 rounded-2xl border border-sky-100 shadow-sm space-y-6">
            <h3 className="text-sm font-extrabold text-slate-400 uppercase tracking-wider mb-2 flex items-center">
              <UserIcon size={14} className="mr-2 text-sky-500" />
              Reporter Details
@@ -185,10 +238,9 @@ const RequestForm: React.FC<RequestFormProps> = ({ onSubmit, onCancel, currentUs
            
            {/* Full Name */}
            <div>
-             <label className="block text-sm font-bold text-slate-700 mb-2 ml-1">Full Name</label>
+             <label className="block text-sm font-bold text-slate-700 mb-2 ml-1">Full Name <span className="text-rose-500">*</span></label>
              <input
                type="text"
-               required
                className="w-full px-5 py-3 rounded-xl border border-slate-200 focus:ring-4 focus:ring-sky-500/10 focus:border-sky-500 transition-all outline-none bg-white font-medium text-slate-700"
                placeholder="Enter your full name"
                value={userName}
@@ -223,13 +275,12 @@ const RequestForm: React.FC<RequestFormProps> = ({ onSubmit, onCancel, currentUs
              {/* Conditional Fields based on Role */}
              {userRole === UserRole.STUDENT && (
                <div className="animate-fadeIn">
-                 <label className="block text-sm font-bold text-slate-700 mb-2 ml-1">Course</label>
+                 <label className="block text-sm font-bold text-slate-700 mb-2 ml-1">Course <span className="text-rose-500">*</span></label>
                  <div className="relative">
                    <GraduationCap className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400" size={18} />
                    <select
                      value={userCourse}
                      onChange={(e) => setUserCourse(e.target.value)}
-                     required={userRole === UserRole.STUDENT}
                      className="w-full pl-11 pr-4 py-3 rounded-xl border border-slate-200 focus:ring-4 focus:ring-sky-500/10 focus:border-sky-500 outline-none bg-white font-medium text-slate-700 appearance-none cursor-pointer"
                    >
                      <option value="" disabled>Select Course</option>
@@ -246,13 +297,12 @@ const RequestForm: React.FC<RequestFormProps> = ({ onSubmit, onCancel, currentUs
 
              {userRole === UserRole.STAFF && (
                <div className="animate-fadeIn">
-                 <label className="block text-sm font-bold text-slate-700 mb-2 ml-1">Staff Position</label>
+                 <label className="block text-sm font-bold text-slate-700 mb-2 ml-1">Staff Position <span className="text-rose-500">*</span></label>
                  <div className="relative">
                    <Briefcase className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400" size={18} />
                    <select
                      value={userStaffPosition}
                      onChange={(e) => setUserStaffPosition(e.target.value)}
-                     required={userRole === UserRole.STAFF}
                      className="w-full pl-11 pr-4 py-3 rounded-xl border border-slate-200 focus:ring-4 focus:ring-sky-500/10 focus:border-sky-500 outline-none bg-white font-medium text-slate-700 appearance-none cursor-pointer"
                    >
                      <option value="" disabled>Select Position</option>
@@ -269,7 +319,7 @@ const RequestForm: React.FC<RequestFormProps> = ({ onSubmit, onCancel, currentUs
         {/* SECTION: Request Details */}
         
         {/* Category Selection */}
-        <div className="bg-white/50 p-6 rounded-2xl border border-slate-100">
+        <div className="bg-white/50 p-5 md:p-6 rounded-2xl border border-slate-100">
           <label className="block text-sm font-bold text-slate-700 mb-3 ml-1">What type of request is this?</label>
           <div className="relative">
             <select
@@ -301,7 +351,6 @@ const RequestForm: React.FC<RequestFormProps> = ({ onSubmit, onCancel, currentUs
               <label className="block text-sm font-bold text-slate-700 mb-2 ml-1">Issue Title <span className="text-rose-500">*</span></label>
               <input
                 type="text"
-                required
                 className="w-full px-5 py-3 rounded-xl border border-slate-200 focus:ring-4 focus:ring-sky-500/10 focus:border-sky-500 transition-all outline-none bg-white font-medium text-slate-700 placeholder:text-slate-400"
                 placeholder="Broken Projector..."
                 value={title}
@@ -317,7 +366,6 @@ const RequestForm: React.FC<RequestFormProps> = ({ onSubmit, onCancel, currentUs
               </label>
               <input
                 type="text"
-                required
                 className="w-full px-5 py-3 rounded-xl border border-slate-200 focus:ring-4 focus:ring-sky-500/10 focus:border-sky-500 transition-all outline-none bg-white font-medium text-slate-700 placeholder:text-slate-400"
                 placeholder="Room 304..."
                 value={location}
@@ -350,7 +398,6 @@ const RequestForm: React.FC<RequestFormProps> = ({ onSubmit, onCancel, currentUs
             )}
           </div>
           <textarea
-            required={isAcademic} // Only required for Academic
             rows={isAcademic ? 6 : 4}
             className="w-full px-5 py-4 rounded-xl border border-slate-200 focus:ring-4 focus:ring-sky-500/10 focus:border-sky-500 transition-all outline-none resize-none bg-white font-medium text-slate-700 placeholder:text-slate-400 shadow-sm"
             placeholder={isAcademic ? "Hi, I would like to request a copy of my transcript..." : "Please describe the issue in detail (optional)..."}
@@ -359,45 +406,67 @@ const RequestForm: React.FC<RequestFormProps> = ({ onSubmit, onCancel, currentUs
           />
         </div>
 
-        {/* Image Upload - REQUIRED for General, Optional for Academic */}
+        {/* Image Upload - MULTIPLE SUPPORT (Max 5) */}
         {!isAcademic && (
           <div>
-            <label className="block text-sm font-bold text-slate-700 mb-3 ml-1">
-              Attachment <span className="text-rose-500">*</span>
+            <label className="block text-sm font-bold text-slate-700 mb-3 ml-1 flex justify-between">
+              <span>Attachment <span className="text-rose-500">*</span></span>
+              <span className="text-xs text-slate-400">{images.length}/{MAX_IMAGES} Images</span>
             </label>
-            <div 
-              onClick={() => !isProcessingImage && fileInputRef.current?.click()}
-              className={`group border-2 border-dashed ${!image ? 'border-sky-300 bg-sky-50/50' : 'border-slate-200 bg-slate-50/50'} rounded-2xl p-8 flex flex-col items-center justify-center text-slate-500 hover:border-sky-400 hover:bg-sky-50/30 transition-all cursor-pointer ${isProcessingImage ? 'opacity-50 cursor-wait' : ''}`}
-            >
-              {isProcessingImage ? (
-                <div className="flex flex-col items-center">
-                  <Loader2 size={28} className="animate-spin text-sky-600 mb-3" />
-                  <span className="text-sm font-bold text-sky-600">Compressing Image...</span>
-                </div>
-              ) : image ? (
-                <div className="relative w-full h-48 group-hover:scale-[1.02] transition-transform duration-300">
-                  <img src={image} alt="Preview" className="w-full h-full object-contain rounded-xl shadow-sm" />
-                  <div className="absolute inset-0 flex items-center justify-center bg-black/40 opacity-0 group-hover:opacity-100 transition-opacity rounded-xl backdrop-blur-[2px]">
-                      <span className="text-white font-bold bg-white/20 px-4 py-2 rounded-full border border-white/50 backdrop-blur-md">Change Photo</span>
-                  </div>
-                </div>
-              ) : (
-                <>
-                  <div className="w-12 h-12 bg-sky-100 rounded-full flex items-center justify-center mb-3 group-hover:scale-110 transition-transform text-sky-600 ring-4 ring-sky-50">
-                     <Upload size={20} strokeWidth={3} />
-                  </div>
-                  <span className="text-sm font-bold text-sky-700 group-hover:text-sky-600 transition-colors">Click to upload photo</span>
-                  <span className="text-xs text-slate-400 mt-1 font-medium">Required for this request type</span>
-                </>
-              )}
-              <input 
-                  ref={fileInputRef} 
-                  type="file" 
-                  accept="image/*" 
-                  className="hidden" 
-                  onChange={handleImageUpload}
-                  disabled={isProcessingImage}
-              />
+            
+            <div className="space-y-4">
+               {/* Upload Box */}
+               {images.length < MAX_IMAGES && (
+                 <div 
+                   onClick={() => !isProcessingImage && fileInputRef.current?.click()}
+                   className={`group border-2 border-dashed ${isProcessingImage ? 'opacity-50 cursor-wait' : 'cursor-pointer'} border-sky-300 bg-sky-50/50 rounded-2xl p-6 flex flex-col items-center justify-center text-slate-500 hover:border-sky-400 hover:bg-sky-50/70 transition-all`}
+                 >
+                   {isProcessingImage ? (
+                     <div className="flex flex-col items-center">
+                       <Loader2 size={24} className="animate-spin text-sky-600 mb-2" />
+                       <span className="text-sm font-bold text-sky-600">Compressing Images...</span>
+                     </div>
+                   ) : (
+                     <>
+                       <div className="w-10 h-10 bg-sky-100 rounded-full flex items-center justify-center mb-2 text-sky-600 ring-4 ring-sky-50">
+                          <Upload size={18} strokeWidth={3} />
+                       </div>
+                       <span className="text-sm font-bold text-sky-700">Click to upload photos</span>
+                       <span className="text-xs text-slate-400 mt-1 font-medium">Max {MAX_IMAGES} images supported</span>
+                     </>
+                   )}
+                   <input 
+                       ref={fileInputRef} 
+                       type="file" 
+                       multiple
+                       accept="image/*" 
+                       className="hidden" 
+                       onChange={handleImageUpload}
+                       disabled={isProcessingImage}
+                   />
+                 </div>
+               )}
+
+               {/* Image Grid */}
+               {images.length > 0 && (
+                 <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-3 animate-fadeIn">
+                    {images.map((img, index) => (
+                      <div key={index} className="relative group aspect-square rounded-xl overflow-hidden border border-slate-200 shadow-sm bg-white">
+                        <img src={img} alt={`Preview ${index + 1}`} className="w-full h-full object-cover" />
+                        <button 
+                           type="button"
+                           onClick={() => removeImage(index)}
+                           className="absolute top-1 right-1 p-1 bg-white/90 rounded-full text-rose-500 shadow-sm opacity-0 group-hover:opacity-100 transition-opacity hover:bg-white"
+                        >
+                           <X size={14} />
+                        </button>
+                        <div className="absolute bottom-1 left-1 bg-black/50 text-white text-[10px] px-1.5 rounded-md font-bold backdrop-blur-sm">
+                           #{index + 1}
+                        </div>
+                      </div>
+                    ))}
+                 </div>
+               )}
             </div>
           </div>
         )}
